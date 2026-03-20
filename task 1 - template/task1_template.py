@@ -4,71 +4,78 @@ import os
 import csv
 import numpy as np
 
-#declare your own function(s)
-def func1():
-    print("Test")
+class Item:
+    def __init__(self, item_id, rating, timestamp):
+        self.item_id = item_id
+        self.rating = rating
+        self.timestamp = timestamp
 
+class User:
+    def __init__(self, user_id):
+        self.user_id = user_id
+        self.items = dict() # item_id to item dictionary
+        self.average_rating = None
 
+    def get_average_rating(self):
+        """
+        This function returns the average rating given by the user.
+        Once the average rating is calculated, the result is saved and this function will then return the saved result.
+        Therefore, only run this function once all item ratings have been added, otherwise the average rating would be incorrect.
+        :return average rating (float):
+        """
+        if self.average_rating is not None:
+            return self.average_rating
 
-def get_average_rating(user_ratings:dict):
+        _sum = 0
+        for item_id in self.items:
+            _sum += self.items[item_id].rating
+
+        self.average_rating = _sum / len(self.items)
+        return self.average_rating
+
+def get_similarity(user1: User, user2: User):
     """
-    This function returns the average rating of the given the item to rating dictionary
-    :param user_ratings: item id to rating dictionary
-    :return: average rating
-    """
-    counter = 0
-    _sum = 0
-    for item in user_ratings.keys():
-        _sum += user_ratings[item]
-        counter += 1
-    return _sum / counter
-
-def get_similarity(user1, user2, arr):
-    """
-    This function returns the Pearson similarity between the given two users
+    This function returns the Pearson coefficient similarity between the given two users
     :param user1:
     :param user2:
-    :param arr:
-    :return:
+    :return similarity (float):
     """
+    user1_avg = user1.get_average_rating()
+    user2_avg = user2.get_average_rating()
 
-    def get_user_ratings(_user1, _user2, _arr):
-        """
-        This function returns a dictionary of item id to rating of the given users
-        :param _user1:
-        :param _user2:
-        :param _arr:
-        :return:
-        """
-        user1_ratings = dict()
-        user2_ratings = dict()
-        for elem in _arr:
-            # elem[0]: user id
-            # elem[1]: item id
-            # elem[2]: rating
-            if elem[0] == _user1:
-                user1_ratings[elem[1]] = elem[2]
-            elif elem[0] == _user2:
-                user2_ratings[elem[1]] = elem[2]
-        return user1_ratings, user2_ratings
-
-    user1_ratings, user2_ratings = get_user_ratings(user1, user2, arr)
-    user1_avg = get_average_rating(user1_ratings)
-    user2_avg = get_average_rating(user2_ratings)
-
-    common_items = user1_ratings.keys() & user2_ratings.keys()
+    common_items = user1.item_ratings.keys() & user2.item_ratings.keys()
 
     sum_user1_x_user2 = 0
     sum_user1 = 0
     sum_user2 = 0
 
     for item in common_items:
-        sum_user1_x_user2 += (user1_ratings[item] - user1_avg) * (user2_ratings[item] - user2_avg)
-        sum_user1 += (user1_ratings[item] - user1_avg) ** 2
-        sum_user2 += (user2_ratings[item] - user2_avg) ** 2
+        sum_user1_x_user2 += (user1.item_ratings[item] - user1_avg) * (user2.item_ratings[item] - user2_avg)
+        sum_user1 += (user1.item_ratings[item] - user1_avg) ** 2
+        sum_user2 += (user2.item_ratings[item] - user2_avg) ** 2
 
     return sum_user1_x_user2 / (math.sqrt(sum_user1) * math.sqrt(sum_user2))
 
+def get_users_from_csv(file_path):
+    arr = np.genfromtxt(file_path, delimiter=',')
+
+    users = dict()
+
+    for elem in arr:
+        user_id = int(elem[0])
+        item_id = int(elem[1])
+        rating = np.float16(elem[2])
+        timestamp = int(elem[3])
+
+        if user_id not in users:
+            users[user_id] = User(user_id)
+
+        users[user_id].items[item_id] = Item(item_id, rating, timestamp)
+
+    return users
+
+def predict_rating(user: User, item_id, users: dict):
+    pass
 
 if __name__ == "__main__":
     # train_arr = np.genfromtxt('train_100K.csv', delimiter=',')
