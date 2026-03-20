@@ -43,16 +43,16 @@ def get_similarity(user1: User, user2: User):
     user1_avg = user1.get_average_rating()
     user2_avg = user2.get_average_rating()
 
-    common_items = user1.item_ratings.keys() & user2.item_ratings.keys()
+    common_items = user1.items.keys() & user2.items.keys()
 
     sum_user1_x_user2 = 0
     sum_user1 = 0
     sum_user2 = 0
 
-    for item in common_items:
-        sum_user1_x_user2 += (user1.item_ratings[item] - user1_avg) * (user2.item_ratings[item] - user2_avg)
-        sum_user1 += (user1.item_ratings[item] - user1_avg) ** 2
-        sum_user2 += (user2.item_ratings[item] - user2_avg) ** 2
+    for item_id in common_items:
+        sum_user1_x_user2 += (user1.items[item_id] - user1_avg) * (user2.items[item_id] - user2_avg)
+        sum_user1 += (user1.items[item_id] - user1_avg) ** 2
+        sum_user2 += (user2.items[item_id] - user2_avg) ** 2
 
     return sum_user1_x_user2 / (math.sqrt(sum_user1) * math.sqrt(sum_user2))
 
