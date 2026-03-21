@@ -33,17 +33,21 @@ class User:
         self.average_rating = _sum / len(self.items)
         return self.average_rating
 
-def get_similarity(user1: User, user2: User):
+def get_similarity(user1: User, user2: User, common_item_threshold: int = 1):
     """
     This function returns the Pearson coefficient similarity between the given two users
     :param user1:
     :param user2:
+    :param common_item_threshold: minimum number of common items (returns 0 if number of common items is lower)
     :return similarity (float):
     """
     user1_avg = user1.get_average_rating()
     user2_avg = user2.get_average_rating()
 
     common_items = user1.items.keys() & user2.items.keys()
+
+    if len(common_items) < common_item_threshold:
+        return 0
 
     sum_user1_x_user2 = 0
     sum_user1 = 0
@@ -57,6 +61,11 @@ def get_similarity(user1: User, user2: User):
     return sum_user1_x_user2 / (math.sqrt(sum_user1) * math.sqrt(sum_user2))
 
 def get_users_from_csv(file_path):
+    """
+    This function reads a csv file and returns a user_id to user dictionary
+    :param file_path:
+    :return users (dict):
+    """
     arr = np.genfromtxt(file_path, delimiter=',')
 
     users = dict()
@@ -74,8 +83,32 @@ def get_users_from_csv(file_path):
 
     return users
 
-def predict_rating(user: User, item_id, users: dict):
-    pass
+def predict_rating(target_user: User, target_item_id, users: dict, maximum_neighbours: int = 10, common_item_threshold: int = 1, similarity_threshold: float = 0.7):
+    """
+    This function predicts the rating that the target user will give the target item
+    :param target_user:
+    :param target_item_id:
+    :param users:
+    :param maximum_neighbours: maximum number of similar users to consider
+    :param common_item_threshold: minimum number of common items
+    :return:
+    """
+    neighbours = []
+    for user_id in users:
+        if user_id == target_user.user_id:
+            continue
+        if target_item_id not in users[user_id].items:
+            continue
+        similarity_with_target_user = get_similarity(target_user, users[user_id], common_item_threshold)
+        if similarity_with_target_user > similarity_threshold:
+            neighbours.append((user_id, similarity_with_target_user))
+
+    if len(neighbours) <= 0:
+        print("No neighbours found")
+        return None
+
+
+
 
 if __name__ == "__main__":
     # train_arr = np.genfromtxt('train_100K.csv', delimiter=',')
