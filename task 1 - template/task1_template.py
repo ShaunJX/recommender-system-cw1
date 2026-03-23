@@ -3,6 +3,7 @@ import sys
 import os
 import csv
 import numpy as np
+from operator import itemgetter
 
 class Item:
     def __init__(self, item_id, rating, timestamp):
@@ -83,6 +84,30 @@ def get_users_from_csv(file_path):
 
     return users
 
+def get_neighbours(target_user: User, target_item_id, users: dict, maximum_neighbours: int = 10, common_item_threshold: int = 1, similarity_threshold: float = 0.7):
+    neighbours = dict()
+    for user_id in users:
+        if user_id == target_user.user_id:
+            continue
+        if target_item_id not in users[user_id].items:
+            continue
+        similarity_with_target_user = get_similarity(target_user, users[user_id], common_item_threshold)
+        if similarity_with_target_user > similarity_threshold:
+            neighbours[user_id] = similarity_with_target_user
+
+    if len(neighbours) <= 0:
+        print("No neighbours found")
+        return None
+
+    sorted_neighbours = dict(sorted(neighbours.items(), key=lambda item: item[1], reverse=True))
+    target_neighbours = dict()
+
+    while len(target_neighbours) < maximum_neighbours:
+        neighbour = list(sorted_neighbours.keys())[0]
+        target_neighbours[neighbour] = sorted_neighbours.pop(neighbour)
+
+    return target_neighbours
+
 def predict_rating(target_user: User, target_item_id, users: dict, maximum_neighbours: int = 10, common_item_threshold: int = 1, similarity_threshold: float = 0.7):
     """
     This function predicts the rating that the target user will give the target item
@@ -91,21 +116,22 @@ def predict_rating(target_user: User, target_item_id, users: dict, maximum_neigh
     :param users:
     :param maximum_neighbours: maximum number of similar users to consider
     :param common_item_threshold: minimum number of common items
+    :param similarity_threshold: minimum similarity rating to consider in prediction
     :return:
     """
-    neighbours = []
-    for user_id in users:
-        if user_id == target_user.user_id:
-            continue
-        if target_item_id not in users[user_id].items:
-            continue
-        similarity_with_target_user = get_similarity(target_user, users[user_id], common_item_threshold)
-        if similarity_with_target_user > similarity_threshold:
-            neighbours.append((user_id, similarity_with_target_user))
+    target_neighbours = get_neighbours(target_user, target_item_id, users, maximum_neighbours, common_item_threshold, similarity_threshold)
 
-    if len(neighbours) <= 0:
-        print("No neighbours found")
-        return None
+    similarity_sum = 0
+    similarity_item_product_sum = 0
+
+    for target_neighbour_id in target_neighbours:
+        similarity = target_neighbours[target_neighbour_id]
+        similarity_sum += similarity
+
+        target_neighbour = users[target_neighbour_id]
+        similarity_item_product_sum += similarity * (target_neighbour.items[target_item_id] - target_neighbour.average_rating)
+
+    return target_user.average_rating + (similarity_item_product_sum / similarity_sum)
 
 
 
