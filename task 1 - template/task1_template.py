@@ -3,7 +3,7 @@ import sys
 import os
 import csv
 import numpy as np
-from operator import itemgetter
+import time
 
 class Item:
     def __init__(self, item_id, rating, timestamp):
@@ -94,11 +94,9 @@ def get_neighbours(target_user: User, target_item_id, users: dict, maximum_neigh
             neighbours[user_id] = similarity_with_target_user
 
     if len(neighbours) <= 0 and similarity_threshold == 0.0:
-        print("No neighbours found")
         return dict()
 
     if len(neighbours) <= 0:
-        print("Similarity threshold too high")
         return dict()
 
     sorted_neighbours = dict(sorted(neighbours.items(), key=lambda item: item[1], reverse=True))
@@ -124,11 +122,9 @@ def predict_rating(target_user: User, target_item_id, users: dict, maximum_neigh
     target_neighbours = get_neighbours(target_user, target_item_id, users, maximum_neighbours, common_item_threshold, similarity_threshold)
 
     if len(target_neighbours) == 0:
-        print("Similarity threshold too high")
         target_neighbours = get_neighbours(target_user, target_item_id, users, maximum_neighbours, common_item_threshold, 0.0)
 
     if len(target_neighbours) == 0:
-        print("No neighbours found, using target user's average rating")
         return target_user.average_rating
 
     similarity_sum = 0
@@ -145,7 +141,10 @@ def predict_rating(target_user: User, target_item_id, users: dict, maximum_neigh
         print(f"Neighbours: {target_neighbours}")
         return target_user.average_rating
 
-    return target_user.average_rating + (similarity_item_product_sum / similarity_sum)
+    soft_class = target_user.average_rating + (similarity_item_product_sum / similarity_sum)
+    hard_class = round(soft_class / 0.5) * 0.5
+
+    return hard_class
 
 def get_mae(train: np.ndarray , test: np.ndarray, maximum_neighbours: int = 10, common_item_threshold: int = 1, similarity_threshold: float = 0.7) -> float:
     users = get_users_from_array(train)
@@ -177,6 +176,8 @@ def cross_validation(arr: np.ndarray, nbins: int = 10, seed: int = 4):
     mean_absolute_errors = np.zeros(nbins)
 
     for i in range(nbins):
+        print(f"Starting fold {i}")
+        start_time = time.time()
         test = bins[i]
         train = []
         for j in range(nbins):
@@ -187,7 +188,11 @@ def cross_validation(arr: np.ndarray, nbins: int = 10, seed: int = 4):
             else:
                 train = train + bins[j]
 
+
         mean_absolute_errors[i] = get_mae(np.array(train), np.array(test))
+        end_time = time.time()
+        print(f"Fold {i} took {end_time - start_time} seconds")
+        print(f"Fold {i} result: {mean_absolute_errors}")
 
     return np.average(mean_absolute_errors)
 
