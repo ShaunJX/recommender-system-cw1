@@ -5,16 +5,19 @@ import csv
 import numpy as np
 import time
 
+ratings = dict()  # dictionary that takes two keys (user_id, item_id) and returns two values (rating, timestamp)
+user_similarity_matrix = dict() # dictionary that takes two keys (user_id1, user_id2) and returns the similarity between them
+item_similarity_matrix = dict() # dictionary that takes two keys (item_id1, item_id2) and returns the similarity between them
+
 class Item:
-    def __init__(self, item_id, rating, timestamp):
+    def __init__(self, item_id):
         self.item_id = item_id
-        self.rating = rating
-        self.timestamp = timestamp
+        self.rated_users = set() # set of user_id who rated this item
 
 class User:
     def __init__(self, user_id):
         self.user_id = user_id
-        self.items = dict() # item_id to item dictionary
+        self.items_rated = set() # set of item_id that user rated
         self.average_rating = None
 
     def get_average_rating(self):
@@ -28,13 +31,13 @@ class User:
             return self.average_rating
 
         _sum = 0
-        for item_id in self.items:
-            _sum += self.items[item_id].rating
+        for item_id in self.items_rated:
+            _sum += ratings[(self.user_id, item_id)][0]
 
-        self.average_rating = _sum / len(self.items)
+        self.average_rating = _sum / len(self.items_rated)
         return self.average_rating
 
-def get_similarity(user1: User, user2: User, common_item_threshold: int = 1):
+def get_user_similarity(user1: User, user2: User, common_item_threshold: int = 1):
     """
     This function returns the Pearson coefficient similarity between the given two users
     :param user1:
@@ -42,10 +45,13 @@ def get_similarity(user1: User, user2: User, common_item_threshold: int = 1):
     :param common_item_threshold: minimum number of common items (returns 0 if number of common items is lower)
     :return similarity (float):
     """
+    if (user1.user_id, user2.user_id) in user_similarity_matrix:
+        return user_similarity_matrix[(user1.user_id, user2.user_id)]
+
     user1_avg = user1.get_average_rating()
     user2_avg = user2.get_average_rating()
 
-    common_items = user1.items.keys() & user2.items.keys()
+    common_items = user1.items_rated & user2.items_rated
 
     if len(common_items) < common_item_threshold:
         return 0
@@ -55,19 +61,26 @@ def get_similarity(user1: User, user2: User, common_item_threshold: int = 1):
     sum_user2 = 0
 
     for item_id in common_items:
-        sum_user1_x_user2 += (user1.items[item_id].rating - user1_avg) * (user2.items[item_id].rating - user2_avg)
-        sum_user1 += (user1.items[item_id].rating - user1_avg) ** 2
-        sum_user2 += (user2.items[item_id].rating - user2_avg) ** 2
+        user1_rating = ratings[(user1.user_id, item_id)][0]
+        user2_rating = ratings[(user2.user_id, item_id)][0]
+        sum_user1_x_user2 += (user1_rating - user1_avg) * (user2_rating - user2_avg)
+        sum_user1 += (user1_rating - user1_avg) ** 2
+        sum_user2 += (user2_rating - user2_avg) ** 2
 
-    return sum_user1_x_user2 / (math.sqrt(sum_user1) * math.sqrt(sum_user2))
+    result = sum_user1_x_user2 / (math.sqrt(sum_user1) * math.sqrt(sum_user2))
+    user_similarity_matrix[(user1.user_id, user2.user_id)] = result
+    user_similarity_matrix[(user2.user_id, user1.user_id)] = result
+    return result
 
-def get_users_from_array(arr: np.ndarray):
+def read_array(arr: np.ndarray):
     """
-    This function returns a user_id to user dictionary given an array
+    This function returns a user_id to user dictionary and an item_id to item dictionary given an array
     :param arr:
     :return users (dict):
+    :return items (dict):
     """
-    users = dict()
+    users = dict() # dictionary that takes a key (user_id) and returns a value (User)
+    items = dict() # dictionary that takes a key (item_id) and returns a value (Item)
 
     for elem in arr:
         user_id = int(elem[0])
@@ -78,9 +91,14 @@ def get_users_from_array(arr: np.ndarray):
         if user_id not in users:
             users[user_id] = User(user_id)
 
-        users[user_id].items[item_id] = Item(item_id, rating, timestamp)
+        if item_id not in items:
+            items[item_id] = Item(item_id)
 
-    return users
+        users[user_id].items_rated.append(item_id)
+        items[item_id].rated_users.append(user_id)
+        ratings[(user_id, item_id)] = (rating, timestamp)
+
+    return users, items
 
 def get_neighbours(target_user: User, target_item_id, users: dict, maximum_neighbours: int = 10, common_item_threshold: int = 1, similarity_threshold: float = 0.7):
     neighbours = dict()
@@ -89,7 +107,7 @@ def get_neighbours(target_user: User, target_item_id, users: dict, maximum_neigh
             continue
         if target_item_id not in users[user_id].items:
             continue
-        similarity_with_target_user = get_similarity(target_user, users[user_id], common_item_threshold)
+        similarity_with_target_user = get_user_similarity(target_user, users[user_id], common_item_threshold)
         if similarity_with_target_user > similarity_threshold:
             neighbours[user_id] = similarity_with_target_user
 
@@ -107,6 +125,9 @@ def get_neighbours(target_user: User, target_item_id, users: dict, maximum_neigh
         target_neighbours[neighbour] = sorted_neighbours.pop(neighbour)
 
     return target_neighbours
+
+def get_item_neighbours():
+    pass
 
 def predict_rating(target_user: User, target_item_id, users: dict, maximum_neighbours: int = 10, common_item_threshold: int = 1, similarity_threshold: float = 0.7):
     """
@@ -147,7 +168,7 @@ def predict_rating(target_user: User, target_item_id, users: dict, maximum_neigh
     return hard_class
 
 def get_mae(train: np.ndarray , test: np.ndarray, maximum_neighbours: int = 10, common_item_threshold: int = 1, similarity_threshold: float = 0.7) -> float:
-    users = get_users_from_array(train)
+    users, items = read_array(train)
 
     absolute_error_sum = 0
     counter = 0
