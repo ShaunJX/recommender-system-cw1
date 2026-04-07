@@ -117,9 +117,6 @@ def get_neighbours(target_user: User, target_item_id, users: dict, maximum_neigh
         if similarity_with_target_user > similarity_threshold:
             neighbours[user_id] = similarity_with_target_user
 
-    if len(neighbours) <= 0 and similarity_threshold == 0.0:
-        return dict()
-
     if len(neighbours) <= 0:
         return dict()
 
@@ -228,14 +225,14 @@ def predict_rating(target_user: User, target_item_id, items: dict, users: dict, 
     target_neighbours = get_neighbours(target_user, target_item_id, users, maximum_neighbours, common_item_threshold, similarity_threshold)
 
     if len(target_neighbours) == 0:
-        target_neighbours = get_neighbours(target_user, target_item_id, users, maximum_neighbours, common_item_threshold, 0.0)
+        target_neighbours = get_neighbours(target_user, target_item_id, users, maximum_neighbours, common_item_threshold, -1)
 
     if len(target_neighbours) == 0:
         if target_item_id in items:
             return get_item_based_prediction(items[target_item_id], target_user.user_id, items, users, maximum_neighbours, similarity_threshold)
         else:
             return target_user.get_average_rating()
-        #return target_user.get_average_rating()
+        # return target_user.get_average_rating()
 
     similarity_sum = 0
     similarity_item_product_sum = 0
@@ -264,6 +261,10 @@ def get_mae(train: np.ndarray , test: np.ndarray, maximum_neighbours: int = 10, 
 
     for (user_id, item_id, rating, timestamp) in test:
         prediction = predict_rating(users[user_id], item_id, items, users, maximum_neighbours, 1, similarity_threshold)
+        # if item_id not in items:
+        #     prediction = predict_rating(users[user_id], item_id, items, users, maximum_neighbours, 1, similarity_threshold)
+        # else:
+        #     prediction = get_item_based_prediction(items[item_id], user_id, items, users, maximum_neighbours, similarity_threshold)
         absolute_error_sum += abs(prediction - rating)
         counter += 1
 
@@ -299,7 +300,7 @@ def cross_validation(arr: np.ndarray, nbins: int = 10, seed: int = 4):
                 train = train + bins[j]
 
 
-        mean_absolute_errors[i] = get_mae(np.array(train), np.array(test))
+        mean_absolute_errors[i] = get_mae(np.array(train), np.array(test), similarity_threshold=0.05)
         end_time = time.time()
         print(f"Fold {i} took {end_time - start_time} seconds")
         print(f"Fold {i} result: {mean_absolute_errors}")
@@ -330,7 +331,11 @@ if __name__ == "__main__":
     train_arr = np.genfromtxt('train_100K.csv', delimiter=',')
     test_arr = np.genfromtxt('test_100K.csv', delimiter=',')
 
-    # print(cross_validation(train_arr, nbins=5)) # Evaluation via cross validation
+    print(cross_validation(train_arr, nbins=5)) # Evaluation via cross validation
+    # Avg MAE of: 0.9276483955764097 for 5 bin CV with purely user based collaborative filtering and user average rating if no similar users found
+    # Avg MAE of: 0.927855336191518 for 5 bin CV with user based CF and item based CF if no similar users found
 
-    result = get_prediction(train_arr, test_arr)
-    create_csv_from_arr(result, 'result.csv')
+    # Avg MAE of: 1.01145292855605 for 5 bin CV with item based CF and user avg rating if target item is new item
+
+    # result = get_prediction(train_arr, test_arr)
+    # create_csv_from_arr(result, 'result.csv')
