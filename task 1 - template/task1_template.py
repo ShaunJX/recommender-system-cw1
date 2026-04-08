@@ -2,6 +2,8 @@ import math
 import sys
 import os
 import csv
+from typing import Any
+
 import numpy as np
 import time
 
@@ -54,7 +56,7 @@ def get_user_similarity(user1: User, user2: User, common_item_threshold: int = 1
     common_items = user1.items_rated & user2.items_rated
 
     if len(common_items) < common_item_threshold:
-        return 0
+        return -1
 
     sum_user1_x_user2 = 0
     sum_user1 = 0
@@ -67,7 +69,12 @@ def get_user_similarity(user1: User, user2: User, common_item_threshold: int = 1
         sum_user1 += (user1_rating - user1_avg) ** 2
         sum_user2 += (user2_rating - user2_avg) ** 2
 
+    if sum_user1 == 0 or sum_user2 == 0:
+        # prevent divide by zero
+        return -1
+
     result = sum_user1_x_user2 / (math.sqrt(sum_user1) * math.sqrt(sum_user2))
+    # save result in similarity matrix
     user_similarity_matrix[(user1.user_id, user2.user_id)] = result
     user_similarity_matrix[(user2.user_id, user1.user_id)] = result
     return result
@@ -106,7 +113,7 @@ def read_array(arr: np.ndarray):
 
     return users, items
 
-def get_neighbours(target_user: User, target_item_id, users: dict, maximum_neighbours: int = 10, common_item_threshold: int = 1, similarity_threshold: float = 0.7):
+def get_neighbours(target_user: User, target_item_id, users: dict, max_neighbours: int = 10000, common_item_threshold: int = 1, similarity_threshold: float = 0):
     neighbours = dict()
     for user_id in users:
         if user_id == target_user.user_id:
@@ -114,7 +121,7 @@ def get_neighbours(target_user: User, target_item_id, users: dict, maximum_neigh
         if target_item_id not in users[user_id].items_rated:
             continue
         similarity_with_target_user = get_user_similarity(target_user, users[user_id], common_item_threshold)
-        if similarity_with_target_user > similarity_threshold:
+        if similarity_with_target_user > similarity_threshold and similarity_with_target_user > -1:
             neighbours[user_id] = similarity_with_target_user
 
     if len(neighbours) <= 0:
@@ -123,7 +130,7 @@ def get_neighbours(target_user: User, target_item_id, users: dict, maximum_neigh
     sorted_neighbours = dict(sorted(neighbours.items(), key=lambda item: item[1], reverse=True))
     target_neighbours = dict()
 
-    while len(target_neighbours) < maximum_neighbours and len(sorted_neighbours) > 0:
+    while len(target_neighbours) < max_neighbours and len(sorted_neighbours) > 0:
         neighbour = list(sorted_neighbours.keys())[0]
         target_neighbours[neighbour] = sorted_neighbours.pop(neighbour)
 
@@ -147,6 +154,7 @@ def get_item_similarity(item1: Item, item2: Item, users: dict):
         item1_rating = ratings[(user_id, item1.item_id)][0]
         item2_rating = ratings[(user_id, item2.item_id)][0]
         user_avg_rating = users[user_id].get_average_rating()
+
         sum_item1_x_item2 += (item1_rating - user_avg_rating) * (item2_rating - user_avg_rating)
         sum_item1 += (item1_rating - user_avg_rating) ** 2
         sum_item2 += (item2_rating - user_avg_rating) ** 2
@@ -159,7 +167,7 @@ def get_item_similarity(item1: Item, item2: Item, users: dict):
     item_similarity_matrix[(item2.item_id, item1.item_id)] = item_similarity
     return item_similarity
 
-def get_item_neighbours(target_item: Item, target_user_id, items: dict, users: dict, maximum_neighbours: int = 10, similarity_threshold: float = 0.7):
+def get_item_neighbours(target_item: Item, target_user_id, items: dict, users: dict, max_neighbours: int = 100000, similarity_threshold: float = 0):
     neighbours = dict()
     for item_id in items:
         if item_id == target_item.item_id:
@@ -176,17 +184,17 @@ def get_item_neighbours(target_item: Item, target_user_id, items: dict, users: d
     sorted_neighbours = dict(sorted(neighbours.items(), key=lambda item: item[1], reverse=True))
     target_neighbours = dict()
 
-    while len(target_neighbours) < maximum_neighbours and len(sorted_neighbours) > 0:
+    while len(target_neighbours) < max_neighbours and len(sorted_neighbours) > 0:
         neighbour = list(sorted_neighbours.keys())[0]
         target_neighbours[neighbour] = sorted_neighbours.pop(neighbour)
 
     return target_neighbours
 
-def get_item_based_prediction(target_item: Item, target_user_id, items: dict, users: dict, maximum_neighbours: int = 10, similarity_threshold: float = 0.7):
-    target_neighbours = get_item_neighbours(target_item, target_user_id, items, users, maximum_neighbours, similarity_threshold)
+def get_item_based_prediction(target_item: Item, target_user_id, items: dict, users: dict, max_neighbours: int = 100000, similarity_threshold: float = 0):
+    target_neighbours = get_item_neighbours(target_item, target_user_id, items, users, max_neighbours, similarity_threshold)
 
     if len(target_neighbours) == 0:
-        target_neighbours = get_item_neighbours(target_item, target_user_id, items, users, maximum_neighbours, 0.0)
+        target_neighbours = get_item_neighbours(target_item, target_user_id, items, users, max_neighbours, 0.0)
 
     if len(target_neighbours) == 0:
         return users[target_user_id].get_average_rating()
@@ -210,29 +218,33 @@ def get_item_based_prediction(target_item: Item, target_user_id, items: dict, us
 
     return hard_class
 
-def predict_rating(target_user: User, target_item_id, items: dict, users: dict, maximum_neighbours: int = 10, common_item_threshold: int = 1, similarity_threshold: float = 0.7):
+def get_user_based_prediction(target_user: User, target_item_id, items: dict, users: dict, max_neighbours: int = 100000, common_item_threshold: int = 1, similarity_threshold: float = 0):
     """
     This function predicts the rating that the target user will give the target item
     :param target_user:
     :param target_item_id:
     :param items:
     :param users:
-    :param maximum_neighbours: maximum number of similar users to consider
+    :param max_neighbours: maximum number of similar users to consider
     :param common_item_threshold: minimum number of common items
     :param similarity_threshold: minimum similarity rating to consider in prediction
     :return:
     """
-    target_neighbours = get_neighbours(target_user, target_item_id, users, maximum_neighbours, common_item_threshold, similarity_threshold)
+    target_neighbours = get_neighbours(target_user, target_item_id, users, max_neighbours, common_item_threshold, similarity_threshold)
 
     if len(target_neighbours) == 0:
-        target_neighbours = get_neighbours(target_user, target_item_id, users, maximum_neighbours, common_item_threshold, -1)
+        target_neighbours = get_neighbours(target_user, target_item_id, users, max_neighbours, common_item_threshold=1, similarity_threshold=-1)
 
+    if len(target_neighbours) == 0:
+        return target_user.get_average_rating()
+
+    """
     if len(target_neighbours) == 0:
         if target_item_id in items:
-            return get_item_based_prediction(items[target_item_id], target_user.user_id, items, users, maximum_neighbours, similarity_threshold)
+            return get_item_based_prediction(items[target_item_id], target_user.user_id, items, users, max_neighbours, similarity_threshold)
         else:
             return target_user.get_average_rating()
-        # return target_user.get_average_rating()
+    """
 
     similarity_sum = 0
     similarity_item_product_sum = 0
@@ -245,32 +257,38 @@ def predict_rating(target_user: User, target_item_id, items: dict, users: dict, 
         similarity_item_product_sum += similarity * (ratings[(target_neighbour_id, target_item_id)][0] - target_neighbour.get_average_rating())
 
     if similarity_sum == 0:
-        print(f"Neighbours: {target_neighbours}")
-        return target_user.average_rating
+        # prevent divide by zero error
+        return target_user.get_average_rating()
 
     soft_class = target_user.get_average_rating() + (similarity_item_product_sum / similarity_sum)
     hard_class = round(soft_class / 0.5) * 0.5
 
     return hard_class
 
-def get_mae(train: np.ndarray , test: np.ndarray, maximum_neighbours: int = 10, similarity_threshold: float = 0.7) -> float:
+def get_mae(train: np.ndarray , test: np.ndarray, max_neighbours: int = 100000, similarity_threshold: float = 0) -> float:
     users, items = read_array(train)
 
     absolute_error_sum = 0
     counter = 0
 
     for (user_id, item_id, rating, timestamp) in test:
-        prediction = predict_rating(users[user_id], item_id, items, users, maximum_neighbours, 1, similarity_threshold)
-        # if item_id not in items:
-        #     prediction = predict_rating(users[user_id], item_id, items, users, maximum_neighbours, 1, similarity_threshold)
-        # else:
-        #     prediction = get_item_based_prediction(items[item_id], user_id, items, users, maximum_neighbours, similarity_threshold)
+        # prediction = users[user_id].get_average_rating()
+        prediction = get_user_based_prediction(users[user_id], item_id, items, users, max_neighbours, 1, similarity_threshold)
+
+        """
+        if item_id not in items:
+            prediction = get_user_based_prediction(users[user_id], item_id, items, users, max_neighbours, 1, similarity_threshold)
+            # prediction = users[user_id].get_average_rating()
+        else:
+            prediction = get_item_based_prediction(items[item_id], user_id, items, users, max_neighbours, similarity_threshold)
+        """
+
         absolute_error_sum += abs(prediction - rating)
         counter += 1
 
     return absolute_error_sum / counter
 
-def cross_validation(arr: np.ndarray, nbins: int = 10, seed: int = 4):
+def cross_validation(arr: np.ndarray, nbins: int = 5, seed: int = 42, max_neighbours: int = 100000, similarity_threshold: float = 0):
     rng = np.random.default_rng(seed)
     rng.shuffle(arr)
 
@@ -287,7 +305,7 @@ def cross_validation(arr: np.ndarray, nbins: int = 10, seed: int = 4):
     mean_absolute_errors = np.zeros(nbins)
 
     for i in range(nbins):
-        print(f"Starting fold {i}")
+        print(f"Starting Fold {i+1} / {nbins}")
         start_time = time.time()
         test = bins[i]
         train = []
@@ -299,43 +317,38 @@ def cross_validation(arr: np.ndarray, nbins: int = 10, seed: int = 4):
             else:
                 train = train + bins[j]
 
-
-        mean_absolute_errors[i] = get_mae(np.array(train), np.array(test), similarity_threshold=0.05)
+        mean_absolute_errors[i] = get_mae(np.array(train), np.array(test), max_neighbours, similarity_threshold)
         end_time = time.time()
-        print(f"Fold {i} took {end_time - start_time} seconds")
-        print(f"Fold {i} result: {mean_absolute_errors}")
+        print(f"Fold {i+1} took {end_time - start_time} seconds")
+        print(f"Fold {i+1} result: {mean_absolute_errors[i]}")
 
     return np.average(mean_absolute_errors)
 
-def get_prediction(train: np.ndarray, test: np.ndarray, maximum_neighbours: int = 10, common_item_threshold: int = 1, similarity_threshold: float = 0.7):
+def get_prediction(train: np.ndarray, test: np.ndarray, max_neighbours: int = 100000, common_item_threshold: int = 1, similarity_threshold: float = 0):
     users, items = read_array(train)
 
-    predicted_arr = np.zeros(len(test))
+    predicted_list = []
 
     for i in range(len(test)):
         user_id = test[i][0]
         item_id = test[i][1]
         timestamp = test[i][2]
 
-        prediction = predict_rating(users[user_id], item_id, items, users, maximum_neighbours, common_item_threshold, similarity_threshold)
-        predicted_arr[i] = np.array([int(user_id), int(item_id), prediction, int(timestamp)])
+        prediction = get_user_based_prediction(users[user_id], item_id, items, users, max_neighbours, common_item_threshold, similarity_threshold)
+        predicted_list.append((int(user_id), int(item_id), prediction, int(timestamp)))
 
-    return predicted_arr
+    return predicted_list
 
-def create_csv_from_arr(arr: np.ndarray, fname):
-    with open(fname, 'w') as csvfile:
+def create_csv_from_list(to_csv: list[Any], fname):
+    with open(fname, 'w', newline='') as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerows(arr)
+        writer.writerows(to_csv)
 
 if __name__ == "__main__":
     train_arr = np.genfromtxt('train_100K.csv', delimiter=',')
     test_arr = np.genfromtxt('test_100K.csv', delimiter=',')
 
-    print(cross_validation(train_arr, nbins=5)) # Evaluation via cross validation
-    # Avg MAE of: 0.9276483955764097 for 5 bin CV with purely user based collaborative filtering and user average rating if no similar users found
-    # Avg MAE of: 0.927855336191518 for 5 bin CV with user based CF and item based CF if no similar users found
+    # print(f"Average MAE: {cross_validation(train_arr, max_neighbours=100000, similarity_threshold=0)}") # Evaluation via cross validation
 
-    # Avg MAE of: 1.01145292855605 for 5 bin CV with item based CF and user avg rating if target item is new item
-
-    # result = get_prediction(train_arr, test_arr)
-    # create_csv_from_arr(result, 'result.csv')
+    result = get_prediction(train_arr, test_arr)
+    create_csv_from_list(result, 'result.csv')
